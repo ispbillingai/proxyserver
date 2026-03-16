@@ -4,6 +4,8 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 
+ini_set('session.gc_maxlifetime', 31536000); // 1 year
+ini_set('session.cookie_lifetime', 31536000);
 session_start();
 
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
