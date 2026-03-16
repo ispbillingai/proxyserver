@@ -6,6 +6,15 @@ require_once __DIR__ . '/db.php';
 
 session_start();
 
+// Handle actions
+if (isset($_GET['action'])) {
+    if ($_GET['action'] === 'logout') {
+        session_destroy();
+        header('Location: ?action=dashboard');
+        exit;
+    }
+}
+
 // Simple auth
 if (!isset($_SESSION['dash_auth'])) {
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
@@ -34,6 +43,38 @@ if (!isset($_SESSION['dash_auth'])) {
     }
 }
 
+// Handle POST actions (after auth)
+$message = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    // Initialize database table
+    if (isset($_POST['init_db'])) {
+        try {
+            $db = getDB();
+            $message = 'Database table created/verified successfully.';
+        } catch (Throwable $e) {
+            $message = 'Database error: ' . $e->getMessage();
+        }
+    }
+
+    // Change password
+    if (isset($_POST['new_password']) && $_POST['new_password'] !== '') {
+        $newPass = $_POST['new_password'];
+        $configFile = __DIR__ . '/config.php';
+        $content = file_get_contents($configFile);
+        $content = preg_replace(
+            "/define\('DASHBOARD_PASSWORD',\s*'[^']*'\)/",
+            "define('DASHBOARD_PASSWORD', '" . addslashes($newPass) . "')",
+            $content
+        );
+        if (file_put_contents($configFile, $content)) {
+            $message = 'Password changed successfully.';
+        } else {
+            $message = 'Failed to write config file. Check permissions.';
+        }
+    }
+}
+
 $db = getDB();
 
 // Stats
@@ -58,6 +99,8 @@ $routerStats = $db->query("SELECT tenant, router_name, COUNT(*) as user_count,
         body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
         h1 { color: #e94560; margin-bottom: 5px; font-size: 22px; }
         .subtitle { color: #777; font-size: 13px; margin-bottom: 20px; }
+        .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .topbar a { color: #e94560; font-size: 13px; text-decoration: none; }
         .stats { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
         .stat-card { background: #16213e; padding: 18px 24px; border-radius: 8px; min-width: 160px; }
         .stat-card .num { font-size: 28px; font-weight: bold; color: #e94560; }
@@ -71,11 +114,28 @@ $routerStats = $db->query("SELECT tenant, router_name, COUNT(*) as user_count,
         .fresh { color: #4ade80; }
         .stale { color: #fbbf24; }
         .old { color: #ef4444; }
+        .tools { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+        .tool-box { background: #16213e; padding: 18px; border-radius: 8px; flex: 1; min-width: 250px; }
+        .tool-box h3 { font-size: 14px; margin-bottom: 10px; color: #ccc; }
+        .tool-box input { padding: 8px; border: 1px solid #333; border-radius: 4px; background: #0f3460; color: #e0e0e0; width: 100%; margin-bottom: 8px; box-sizing: border-box; }
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; color: #fff; }
+        .btn-green { background: #22c55e; }
+        .btn-blue { background: #3b82f6; }
+        .msg { background: #0f3460; padding: 10px 14px; border-radius: 6px; margin-bottom: 15px; font-size: 13px; border-left: 3px solid #e94560; }
     </style>
 </head>
 <body>
-    <h1>Proxy Cache Server</h1>
-    <p class="subtitle">Auto-refreshes every 30 seconds. Server time: <?= date('Y-m-d H:i:s') ?></p>
+    <div class="topbar">
+        <div>
+            <h1>Proxy Cache Server</h1>
+            <p class="subtitle">Auto-refreshes every 30 seconds. Server time: <?= date('Y-m-d H:i:s') ?></p>
+        </div>
+        <a href="?action=logout">Logout</a>
+    </div>
+
+    <?php if ($message): ?>
+    <div class="msg"><?= htmlspecialchars($message) ?></div>
+    <?php endif; ?>
 
     <div class="stats">
         <div class="stat-card">
@@ -85,6 +145,23 @@ $routerStats = $db->query("SELECT tenant, router_name, COUNT(*) as user_count,
         <div class="stat-card">
             <div class="num"><?= count($tenantStats) ?></div>
             <div class="label">Active Tenants</div>
+        </div>
+    </div>
+
+    <div class="tools">
+        <div class="tool-box">
+            <h3>Initialize Database</h3>
+            <p style="font-size:12px;color:#888;margin-bottom:10px;">Creates the cached_users table if it doesn't exist.</p>
+            <form method="POST">
+                <button type="submit" name="init_db" value="1" class="btn btn-green">Create / Verify Table</button>
+            </form>
+        </div>
+        <div class="tool-box">
+            <h3>Change Dashboard Password</h3>
+            <form method="POST">
+                <input type="password" name="new_password" placeholder="New password" required>
+                <button type="submit" class="btn btn-blue">Change Password</button>
+            </form>
         </div>
     </div>
 
