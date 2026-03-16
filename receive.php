@@ -42,7 +42,7 @@ $db = getDB();
 // INSERT IGNORE - skip if username already cached for this tenant+router
 $stmt = $db->prepare("INSERT IGNORE INTO cached_users
     (tenant, router_id, username, profile_name, type, created_time, pushed_at)
-    VALUES (:tenant, :router_id, :username, :profile_name, :type, :created_time, NOW())");
+    VALUES (:tenant, :router_id, :username, :profile_name, :type, :created_time, :pushed_at)");
 
 $count = 0;
 
@@ -58,6 +58,7 @@ foreach ($users as $u) {
         ':profile_name' => trim($u['profile_name'] ?? 'default'),
         ':type'         => trim($u['type'] ?? 'Hotspot'),
         ':created_time' => trim($u['created_time'] ?? ''),
+        ':pushed_at'    => date('Y-m-d H:i:s'),
     ]);
     $count++;
 }

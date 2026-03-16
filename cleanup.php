@@ -9,8 +9,9 @@ $db = getDB();
 
 $maxAge = CLEANUP_MAX_AGE;
 
-$stmt = $db->prepare("DELETE FROM cached_users WHERE pushed_at < DATE_SUB(NOW(), INTERVAL :age SECOND)");
-$stmt->execute([':age' => $maxAge]);
+$cutoff = date('Y-m-d H:i:s', time() - $maxAge);
+$stmt = $db->prepare("DELETE FROM cached_users WHERE pushed_at < :cutoff");
+$stmt->execute([':cutoff' => $cutoff]);
 
 $deleted = $stmt->rowCount();
 
