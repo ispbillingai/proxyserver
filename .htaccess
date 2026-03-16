@@ -1,0 +1,4 @@
+RewriteEngine On
+RewriteRule ^receive$ index.php?action=receive [QSA,L]
+RewriteRule ^fetch$ index.php?action=fetch [QSA,L]
+RewriteRule ^dashboard$ index.php?action=dashboard [QSA,L]
