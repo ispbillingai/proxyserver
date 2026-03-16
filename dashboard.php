@@ -57,22 +57,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Change password
-    if (isset($_POST['new_password']) && $_POST['new_password'] !== '') {
-        $newPass = $_POST['new_password'];
-        $configFile = __DIR__ . '/config.php';
-        $content = file_get_contents($configFile);
-        $content = preg_replace(
-            "/define\('DASHBOARD_PASSWORD',\s*'[^']*'\)/",
-            "define('DASHBOARD_PASSWORD', '" . addslashes($newPass) . "')",
-            $content
-        );
-        if (file_put_contents($configFile, $content)) {
-            $message = 'Password changed successfully.';
-        } else {
-            $message = 'Failed to write config file. Check permissions.';
-        }
-    }
 }
 
 $db = getDB();
@@ -154,13 +138,6 @@ $routerStats = $db->query("SELECT tenant, router_name, COUNT(*) as user_count,
             <p style="font-size:12px;color:#888;margin-bottom:10px;">Creates the cached_users table if it doesn't exist.</p>
             <form method="POST">
                 <button type="submit" name="init_db" value="1" class="btn btn-green">Create / Verify Table</button>
-            </form>
-        </div>
-        <div class="tool-box">
-            <h3>Change Dashboard Password</h3>
-            <form method="POST">
-                <input type="password" name="new_password" placeholder="New password" required>
-                <button type="submit" class="btn btn-blue">Change Password</button>
             </form>
         </div>
     </div>
