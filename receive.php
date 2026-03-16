@@ -1,5 +1,6 @@
 <?php
 // POST endpoint: billing servers push user data here
+// Uses INSERT IGNORE - if username already exists for tenant+router, skips it
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
@@ -38,30 +39,24 @@ if (!is_array($users) || empty($users)) {
 
 $db = getDB();
 
-$stmt = $db->prepare("INSERT INTO cached_users
-    (tenant, router_name, username, profile_name, type, expiration, created_time, pushed_at)
-    VALUES (:tenant, :router_name, :username, :profile_name, :type, :expiration, :created_time, NOW())
-    ON DUPLICATE KEY UPDATE
-        profile_name = VALUES(profile_name),
-        type = VALUES(type),
-        expiration = VALUES(expiration),
-        created_time = VALUES(created_time),
-        pushed_at = NOW()");
+// INSERT IGNORE - skip if username already cached for this tenant+router
+$stmt = $db->prepare("INSERT IGNORE INTO cached_users
+    (tenant, router_id, username, profile_name, type, created_time, pushed_at)
+    VALUES (:tenant, :router_id, :username, :profile_name, :type, :created_time, NOW())");
 
 $count = 0;
 
 foreach ($users as $u) {
-    if (empty($u['username']) || empty($u['router_name'])) {
+    if (empty($u['username']) || empty($u['router_id'])) {
         continue;
     }
 
     $stmt->execute([
         ':tenant'       => $tenant,
-        ':router_name'  => trim($u['router_name']),
+        ':router_id'    => (int)$u['router_id'],
         ':username'     => trim($u['username']),
         ':profile_name' => trim($u['profile_name'] ?? 'default'),
         ':type'         => trim($u['type'] ?? 'Hotspot'),
-        ':expiration'   => trim($u['expiration'] ?? ''),
         ':created_time' => trim($u['created_time'] ?? ''),
     ]);
     $count++;

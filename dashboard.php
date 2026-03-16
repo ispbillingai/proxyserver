@@ -94,28 +94,28 @@ $nextDir = $dir === 'DESC' ? 'asc' : 'desc';
 // Stats
 $totalUsers = $db->query("SELECT COUNT(*) c FROM cached_users")->fetch()['c'];
 $totalTenants = $db->query("SELECT COUNT(DISTINCT tenant) c FROM cached_users")->fetch()['c'];
-$totalRouters = $db->query("SELECT COUNT(DISTINCT CONCAT(tenant,'|',router_name)) c FROM cached_users")->fetch()['c'];
+$totalRouters = $db->query("SELECT COUNT(DISTINCT CONCAT(tenant,'|',router_id)) c FROM cached_users")->fetch()['c'];
 $recentPush = $db->query("SELECT MAX(pushed_at) m FROM cached_users")->fetch()['m'];
 $recentAgo = $recentPush ? (time() - strtotime($recentPush)) : null;
 
 // Tenant stats with push rate (pushes in last 5 min)
 $tenantStats = $db->query("SELECT tenant, COUNT(*) as user_count,
-    COUNT(DISTINCT router_name) as router_count,
+    COUNT(DISTINCT router_id) as router_count,
     MAX(pushed_at) as last_push,
     MIN(pushed_at) as first_push
     FROM cached_users GROUP BY tenant ORDER BY
     " . ($sort === 'users' ? 'user_count' : ($sort === 'routers' ? 'router_count' : ($sort === 'tenant' ? 'tenant' : 'last_push'))) . " $dir")->fetchAll();
 
-$routerStats = $db->query("SELECT tenant, router_name, COUNT(*) as user_count,
+$routerStats = $db->query("SELECT tenant, router_id, COUNT(*) as user_count,
     MAX(pushed_at) as last_push
-    FROM cached_users GROUP BY tenant, router_name ORDER BY
-    " . ($sort === 'users' ? 'user_count' : ($sort === 'router' ? 'router_name' : ($sort === 'tenant' ? 'tenant' : 'last_push'))) . " $dir LIMIT 100")->fetchAll();
+    FROM cached_users GROUP BY tenant, router_id ORDER BY
+    " . ($sort === 'users' ? 'user_count' : ($sort === 'router' ? 'router_id' : ($sort === 'tenant' ? 'tenant' : 'last_push'))) . " $dir LIMIT 100")->fetchAll();
 
-$recentUsers = $db->query("SELECT tenant, router_name, username, profile_name, type, pushed_at
+$recentUsers = $db->query("SELECT tenant, router_id, username, profile_name, type, pushed_at
     FROM cached_users ORDER BY pushed_at DESC LIMIT 50")->fetchAll();
 
 // Top pushers (who sends most)
-$topPushers = $db->query("SELECT tenant, COUNT(*) as total_users, COUNT(DISTINCT router_name) as routers,
+$topPushers = $db->query("SELECT tenant, COUNT(*) as total_users, COUNT(DISTINCT router_id) as routers,
     MAX(pushed_at) as last_push
     FROM cached_users GROUP BY tenant ORDER BY total_users DESC LIMIT 20")->fetchAll();
 
@@ -426,7 +426,7 @@ function progressBar($percent, $color = '#6366f1') {
                 <thead><tr><th><?= sortLink('tenant', 'Tenant', $sort, $dir) ?></th><th><?= sortLink('router', 'Router', $sort, $dir) ?></th><th><?= sortLink('users', 'Users', $sort, $dir) ?></th><th><?= sortLink('last_push', 'Last Push', $sort, $dir) ?></th><th>Status</th></tr></thead>
                 <tbody>
                 <?php foreach ($routerStats as $r): $ago = time() - strtotime($r['last_push']); [$cls, $label] = statusBadge($ago); ?>
-                <tr><td><span class="badge badge-blue"><?= htmlspecialchars($r['tenant']) ?></span></td><td><strong><?= htmlspecialchars($r['router_name']) ?></strong></td><td><?= $r['user_count'] ?></td><td><?= $r['last_push'] ?> <span style="color:#64748b;">(<?= $ago ?>s)</span></td><td><span class="dot dot-<?= $cls ?>"></span><span class="badge badge-<?= $cls ?>"><?= $label ?></span></td></tr>
+                <tr><td><span class="badge badge-blue"><?= htmlspecialchars($r['tenant']) ?></span></td><td><strong><?= htmlspecialchars($r['router_id']) ?></strong></td><td><?= $r['user_count'] ?></td><td><?= $r['last_push'] ?> <span style="color:#64748b;">(<?= $ago ?>s)</span></td><td><span class="dot dot-<?= $cls ?>"></span><span class="badge badge-<?= $cls ?>"><?= $label ?></span></td></tr>
                 <?php endforeach; ?>
                 <?php if (empty($routerStats)): ?><tr><td colspan="5"><div class="empty-state">No routers yet</div></td></tr><?php endif; ?>
                 </tbody>
@@ -441,7 +441,7 @@ function progressBar($percent, $color = '#6366f1') {
                 <thead><tr><th>Tenant</th><th>Router</th><th>Username</th><th>Profile</th><th>Type</th><th>Pushed At</th></tr></thead>
                 <tbody>
                 <?php foreach ($recentUsers as $u): ?>
-                <tr><td><span class="badge badge-blue"><?= htmlspecialchars($u['tenant']) ?></span></td><td><?= htmlspecialchars($u['router_name']) ?></td><td><strong><?= htmlspecialchars($u['username']) ?></strong></td><td><?= htmlspecialchars($u['profile_name']) ?></td><td><span class="badge badge-green"><?= htmlspecialchars($u['type']) ?></span></td><td><?= $u['pushed_at'] ?></td></tr>
+                <tr><td><span class="badge badge-blue"><?= htmlspecialchars($u['tenant']) ?></span></td><td><?= htmlspecialchars($u['router_id']) ?></td><td><strong><?= htmlspecialchars($u['username']) ?></strong></td><td><?= htmlspecialchars($u['profile_name']) ?></td><td><span class="badge badge-green"><?= htmlspecialchars($u['type']) ?></span></td><td><?= $u['pushed_at'] ?></td></tr>
                 <?php endforeach; ?>
                 <?php if (empty($recentUsers)): ?><tr><td colspan="6"><div class="empty-state">No users cached yet</div></td></tr><?php endif; ?>
                 </tbody>

@@ -7,13 +7,13 @@ require_once __DIR__ . '/db.php';
 header('Content-Type: text/plain; charset=utf-8');
 header('Cache-Control: no-cache, no-store, must-revalidate');
 
-$tenant     = isset($_GET['tenant'])      ? trim($_GET['tenant'])      : '';
-$routerName = isset($_GET['router_name']) ? trim($_GET['router_name']) : '';
-$type       = isset($_GET['type'])        ? trim($_GET['type'])        : '';
-$limit      = isset($_GET['limit'])       ? (int)$_GET['limit']       : 20;
+$tenant   = isset($_GET['tenant'])    ? trim($_GET['tenant'])    : '';
+$routerId = isset($_GET['router_id']) ? (int)$_GET['router_id'] : 0;
+$type     = isset($_GET['type'])      ? trim($_GET['type'])      : '';
+$limit    = isset($_GET['limit'])     ? (int)$_GET['limit']      : 20;
 
-if ($tenant === '' || $routerName === '') {
-    echo "ERROR: tenant and router_name required";
+if ($tenant === '' || $routerId < 1) {
+    echo "ERROR: tenant and router_id required";
     exit;
 }
 
@@ -24,8 +24,8 @@ if ($limit < 1 || $limit > 100) {
 $db = getDB();
 
 $sql = "SELECT username, profile_name, type FROM cached_users
-        WHERE tenant = :tenant AND router_name = :router_name";
-$params = [':tenant' => $tenant, ':router_name' => $routerName];
+        WHERE tenant = :tenant AND router_id = :router_id";
+$params = [':tenant' => $tenant, ':router_id' => $routerId];
 
 if ($type !== '') {
     $sql .= " AND type = :type";
@@ -36,7 +36,7 @@ $sql .= " ORDER BY id DESC LIMIT :limit";
 
 $stmt = $db->prepare($sql);
 foreach ($params as $k => $v) {
-    $stmt->bindValue($k, $v);
+    $stmt->bindValue($k, $v, is_int($v) ? PDO::PARAM_INT : PDO::PARAM_STR);
 }
 $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
 $stmt->execute();
