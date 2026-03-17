@@ -15,6 +15,9 @@ switch ($action) {
     case 'fetch':
         require __DIR__ . '/fetch.php';
         break;
+    case 'stk_status':
+        require __DIR__ . '/stk_status.php';
+        break;
     case 'dashboard':
         require __DIR__ . '/dashboard.php';
         break;
