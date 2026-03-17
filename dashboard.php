@@ -4,8 +4,13 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 
+// Session persists for 1 year
+$sessDir = __DIR__ . '/data/sessions';
+if (!is_dir($sessDir)) mkdir($sessDir, 0755, true);
+ini_set('session.save_path', $sessDir);
 ini_set('session.gc_maxlifetime', 31536000);
-ini_set('session.cookie_lifetime', 31536000);
+ini_set('session.gc_probability', 0); // disable GC - we don't want sessions deleted
+session_set_cookie_params(31536000, '/', '', true, true);
 session_start();
 
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
