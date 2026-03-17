@@ -39,10 +39,11 @@ if (!is_array($users) || empty($users)) {
 
 $db = getDB();
 
-// INSERT IGNORE - skip if username already cached for this tenant+router
-$stmt = $db->prepare("INSERT IGNORE INTO cached_users
+// Upsert: insert new user or refresh pushed_at if already exists
+$stmt = $db->prepare("INSERT INTO cached_users
     (tenant, router_id, username, profile_name, type, created_time, pushed_at)
-    VALUES (:tenant, :router_id, :username, :profile_name, :type, :created_time, :pushed_at)");
+    VALUES (:tenant, :router_id, :username, :profile_name, :type, :created_time, :pushed_at)
+    ON DUPLICATE KEY UPDATE pushed_at = VALUES(pushed_at), profile_name = VALUES(profile_name), type = VALUES(type)");
 
 $count = 0;
 
