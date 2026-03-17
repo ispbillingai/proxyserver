@@ -10,7 +10,7 @@ if (!is_dir($sessDir)) mkdir($sessDir, 0755, true);
 ini_set('session.save_path', $sessDir);
 ini_set('session.gc_maxlifetime', 31536000);
 ini_set('session.gc_probability', 0); // disable GC - we don't want sessions deleted
-session_set_cookie_params(31536000, '/', '', true, true);
+session_set_cookie_params(31536000, '/', '', false, true);
 session_start();
 
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
