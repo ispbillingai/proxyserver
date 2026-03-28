@@ -13,17 +13,71 @@ ini_set('session.gc_probability', 0); // disable GC - we don't want sessions del
 session_set_cookie_params(31536000, '/', '', false, true);
 session_start();
 
+// Remember token helpers
+function ensureRememberTable() {
+    $db = getDB();
+    $db->exec("CREATE TABLE IF NOT EXISTS remember_tokens (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        token_hash VARCHAR(64) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NOT NULL,
+        UNIQUE KEY uq_token (token_hash),
+        KEY idx_expires (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+function createRememberToken() {
+    ensureRememberTable();
+    $token = bin2hex(random_bytes(32));
+    $hash = hash('sha256', $token);
+    $db = getDB();
+    // Clean expired tokens
+    $db->exec("DELETE FROM remember_tokens WHERE expires_at < NOW()");
+    $stmt = $db->prepare("INSERT INTO remember_tokens (token_hash, expires_at) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 YEAR))");
+    $stmt->execute([$hash]);
+    setcookie('remember_token', $token, time() + 31536000, '/', '', false, true);
+}
+
+function validateRememberToken() {
+    if (empty($_COOKIE['remember_token'])) return false;
+    ensureRememberTable();
+    $hash = hash('sha256', $_COOKIE['remember_token']);
+    $db = getDB();
+    $stmt = $db->prepare("SELECT id FROM remember_tokens WHERE token_hash = ? AND expires_at > NOW()");
+    $stmt->execute([$hash]);
+    return $stmt->fetch() !== false;
+}
+
+function clearRememberToken() {
+    if (!empty($_COOKIE['remember_token'])) {
+        ensureRememberTable();
+        $hash = hash('sha256', $_COOKIE['remember_token']);
+        $db = getDB();
+        $stmt = $db->prepare("DELETE FROM remember_tokens WHERE token_hash = ?");
+        $stmt->execute([$hash]);
+    }
+    setcookie('remember_token', '', time() - 3600, '/', '', false, true);
+}
+
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
+    clearRememberToken();
     session_destroy();
     header('Location: ?action=dashboard');
     exit;
 }
 
-// Auth
+// Auth - check remember token if session is missing
+if (!isset($_SESSION['dash_auth'])) {
+    if (validateRememberToken()) {
+        $_SESSION['dash_auth'] = true;
+    }
+}
+
 if (!isset($_SESSION['dash_auth'])) {
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
         if ($_POST['password'] === DASHBOARD_PASSWORD) {
             $_SESSION['dash_auth'] = true;
+            createRememberToken();
         } else {
             $error = 'Invalid password';
         }
