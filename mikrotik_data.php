@@ -1,6 +1,7 @@
 <?php
 // Receives heartbeat data from MikroTik routers
-// POST params: tenant, router_id, hotspot_users (comma-separated), pppoe_users (comma-separated)
+// POST params: tenant, router_id, type (hotspot|pppoe), users (comma-separated)
+// Upserts users (updates last_seen if exists). Cleanup handled by cron.
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
@@ -12,12 +13,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $tenant   = trim($_POST['tenant'] ?? '');
 $routerId = intval($_POST['router_id'] ?? 0);
-$hotspotCsv = trim($_POST['hotspot_users'] ?? '');
-$pppoeCsv   = trim($_POST['pppoe_users'] ?? '');
+$type     = trim($_POST['type'] ?? '');
+$usersCsv = trim($_POST['users'] ?? '');
 
-if ($tenant === '' || $routerId === 0) {
+if ($tenant === '' || $routerId === 0 || !in_array($type, ['hotspot', 'pppoe'])) {
     http_response_code(400);
-    exit('Missing tenant or router_id');
+    exit('Missing tenant, router_id, or invalid type');
 }
 
 $db = getDB();
@@ -35,22 +36,15 @@ $db->exec("CREATE TABLE IF NOT EXISTS mikrotik_active_users (
     KEY idx_last_seen (last_seen)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-// Parse usernames
-$hotspotUsers = $hotspotCsv !== '' ? array_filter(array_map('trim', explode(',', $hotspotCsv))) : [];
-$pppoeUsers   = $pppoeCsv !== ''   ? array_filter(array_map('trim', explode(',', $pppoeCsv)))   : [];
+// Parse and upsert users
+$users = $usersCsv !== '' ? array_filter(array_map('trim', explode(',', $usersCsv))) : [];
 
-// Clear old entries for this router so we only keep currently active users
-$stmt = $db->prepare("DELETE FROM mikrotik_active_users WHERE tenant = ? AND router_id = ?");
-$stmt->execute([$tenant, $routerId]);
+$upsert = $db->prepare("INSERT INTO mikrotik_active_users (tenant, router_id, username, type, last_seen)
+    VALUES (?, ?, ?, ?, NOW())
+    ON DUPLICATE KEY UPDATE last_seen = NOW()");
 
-// Insert current active users
-$insert = $db->prepare("INSERT INTO mikrotik_active_users (tenant, router_id, username, type) VALUES (?, ?, ?, ?)");
-
-foreach ($hotspotUsers as $u) {
-    $insert->execute([$tenant, $routerId, $u, 'hotspot']);
-}
-foreach ($pppoeUsers as $u) {
-    $insert->execute([$tenant, $routerId, $u, 'pppoe']);
+foreach ($users as $u) {
+    $upsert->execute([$tenant, $routerId, $u, $type]);
 }
 
 // Update router heartbeat timestamp
@@ -64,9 +58,10 @@ $db->exec("CREATE TABLE IF NOT EXISTS router_heartbeats (
     UNIQUE KEY uq_tenant_router (tenant, router_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-$stmt = $db->prepare("INSERT INTO router_heartbeats (tenant, router_id, hotspot_count, pppoe_count, last_heartbeat)
-    VALUES (?, ?, ?, ?, NOW())
-    ON DUPLICATE KEY UPDATE hotspot_count = VALUES(hotspot_count), pppoe_count = VALUES(pppoe_count), last_heartbeat = NOW()");
-$stmt->execute([$tenant, $routerId, count($hotspotUsers), count($pppoeUsers)]);
+$countCol = $type === 'hotspot' ? 'hotspot_count' : 'pppoe_count';
+$stmt = $db->prepare("INSERT INTO router_heartbeats (tenant, router_id, {$countCol}, last_heartbeat)
+    VALUES (?, ?, ?, NOW())
+    ON DUPLICATE KEY UPDATE {$countCol} = VALUES({$countCol}), last_heartbeat = NOW()");
+$stmt->execute([$tenant, $routerId, count($users)]);
 
-echo "OK: " . count($hotspotUsers) . " hotspot, " . count($pppoeUsers) . " pppoe";
+echo "OK: " . count($users) . " $type";
