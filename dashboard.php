@@ -213,6 +213,23 @@ try {
     $latestHealth = !empty($healthData) ? end($healthData) : null;
 } catch (Throwable $e) {}
 
+// MikroTik data
+$mikrotikRouters = [];
+$mikrotikUsers = [];
+$totalMikrotikUsers = 0;
+$totalMikrotikRouters = 0;
+try {
+    $db->query("SELECT 1 FROM router_heartbeats LIMIT 1");
+    $mikrotikRouters = $db->query("SELECT * FROM router_heartbeats ORDER BY last_heartbeat DESC")->fetchAll();
+    $totalMikrotikRouters = count($mikrotikRouters);
+    $mikrotikSearch = $search !== '' ? "WHERE tenant LIKE :q OR username LIKE :q2" : '';
+    $mikrotikSearchParams = $search !== '' ? [':q' => "%$search%", ':q2' => "%$search%"] : [];
+    $stmt = $db->prepare("SELECT * FROM mikrotik_active_users $mikrotikSearch ORDER BY last_seen DESC LIMIT 200");
+    $stmt->execute($mikrotikSearchParams);
+    $mikrotikUsers = $stmt->fetchAll();
+    $totalMikrotikUsers = $db->query("SELECT COUNT(*) c FROM mikrotik_active_users")->fetch()['c'];
+} catch (Throwable $e) {}
+
 // MySQL status
 $mysqlStatus = [];
 try {
@@ -369,6 +386,10 @@ function timeAgo($ts) { $a=time()-strtotime($ts); if($a<60) return $a.'s ago'; i
             <a href="?action=dashboard&page=top" class="<?= $page === 'top' ? 'active' : '' ?>">
                 <span class="icon">&#9733;</span> Top Pushers
             </a>
+            <div class="lbl">MikroTik</div>
+            <a href="?action=dashboard&page=mikrotik" class="<?= $page === 'mikrotik' ? 'active' : '' ?>">
+                <span class="icon">&#9016;</span> Active Users <span class="count"><?= number_format($totalMikrotikUsers) ?></span>
+            </a>
             <div class="lbl">System</div>
             <a href="?action=dashboard&page=health" class="<?= $page === 'health' ? 'active' : '' ?>">
                 <span class="icon">&#9829;</span> Server Health
@@ -400,6 +421,9 @@ function timeAgo($ts) { $a=time()-strtotime($ts); if($a<60) return $a.'s ago'; i
             <div class="card card-amber"><div class="card-label">Routers</div><div class="card-value"><?= $totalRouters ?></div><div class="card-sub">All tenants</div></div>
             <div class="card card-red"><div class="card-label">Last Push</div><div class="card-value" style="font-size:18px;"><?= $recentAgo !== null ? $recentAgo . 's ago' : '--' ?></div><div class="card-sub"><?= $recentPush ?: 'No data' ?></div></div>
             <div class="card card-purple"><div class="card-label">Push Rate</div><div class="card-value"><?= $pushesPerMin ?></div><div class="card-sub">per minute (5m avg)</div></div>
+            <?php if ($totalMikrotikRouters > 0): ?>
+            <div class="card card-cyan"><div class="card-label">MikroTik</div><div class="card-value"><?= number_format($totalMikrotikUsers) ?></div><div class="card-sub"><?= $totalMikrotikRouters ?> router(s) reporting</div></div>
+            <?php endif; ?>
             <?php if ($latestHealth): ?>
             <div class="card card-cyan"><div class="card-label">RAM</div><div class="card-value" style="font-size:18px;"><?= $latestHealth['ram_percent'] ?>%</div><div class="card-sub"><?= $latestHealth['ram_used_mb'] ?> / <?= $latestHealth['ram_total_mb'] ?> MB</div><?= progressBar($latestHealth['ram_percent']) ?></div>
             <?php endif; ?>
@@ -541,6 +565,56 @@ function timeAgo($ts) { $a=time()-strtotime($ts); if($a<60) return $a.'s ago'; i
             <tr><td style="color:#94a3b8;font-family:monospace;font-size:12px;"><?= $k ?></td><td><?php if(in_array($k,['innodb_buffer_pool_size','max_allowed_packet'])) echo formatBytes((int)$v); elseif($k==='Uptime') echo formatUptime((int)$v); else echo number_format((float)$v); ?></td></tr>
             <?php endforeach; ?>
             </tbody></table>
+        </div>
+
+    <?php elseif ($page === 'mikrotik'): ?>
+        <div class="page-header">
+            <div><h2>MikroTik Active Users</h2><p><?= number_format($totalMikrotikUsers) ?> active across <?= $totalMikrotikRouters ?> router(s)</p></div>
+            <form method="GET" class="search-bar"><input type="hidden" name="action" value="dashboard"><input type="hidden" name="page" value="mikrotik"><input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search tenant or username..."><button type="submit">Search</button></form>
+        </div>
+
+        <div class="table-wrap">
+            <div class="table-header"><h3>Router Heartbeats</h3><span><?= $totalMikrotikRouters ?> router(s)</span></div>
+            <table>
+                <thead><tr><th>Tenant</th><th>Router ID</th><th>Hotspot Users</th><th>PPPoE Users</th><th>Last Heartbeat</th><th>Status</th></tr></thead>
+                <tbody>
+                <?php foreach ($mikrotikRouters as $r):
+                    $ago = time() - strtotime($r['last_heartbeat']);
+                    if ($ago < 120) { $cls = 'green'; $label = 'Online'; }
+                    elseif ($ago < 600) { $cls = 'amber'; $label = 'Idle'; }
+                    else { $cls = 'red'; $label = 'Offline'; }
+                ?>
+                <tr>
+                    <td><span class="badge badge-blue"><?= htmlspecialchars($r['tenant']) ?></span></td>
+                    <td><strong>#<?= $r['router_id'] ?></strong></td>
+                    <td><?= $r['hotspot_count'] ?></td>
+                    <td><?= $r['pppoe_count'] ?></td>
+                    <td><?= timeAgo($r['last_heartbeat']) ?></td>
+                    <td><span class="dot dot-<?= $cls ?>"></span><span class="badge badge-<?= $cls ?>"><?= $label ?></span></td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if (empty($mikrotikRouters)): ?><tr><td colspan="6"><div class="empty-state">No routers reporting yet. Deploy the MikroTik script to start receiving heartbeats.</div></td></tr><?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="table-wrap">
+            <div class="table-header"><h3>Active Users</h3><span><?= count($mikrotikUsers) ?> shown (max 200)</span></div>
+            <table>
+                <thead><tr><th>Tenant</th><th>Router</th><th>Username</th><th>Type</th><th>Last Seen</th></tr></thead>
+                <tbody>
+                <?php foreach ($mikrotikUsers as $u): ?>
+                <tr>
+                    <td><span class="badge badge-blue"><?= htmlspecialchars($u['tenant']) ?></span></td>
+                    <td>#<?= $u['router_id'] ?></td>
+                    <td><strong class="truncate"><?= htmlspecialchars($u['username']) ?></strong></td>
+                    <td><span class="badge badge-<?= $u['type'] === 'hotspot' ? 'green' : 'amber' ?>"><?= ucfirst($u['type']) ?></span></td>
+                    <td><?= timeAgo($u['last_seen']) ?></td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if (empty($mikrotikUsers)): ?><tr><td colspan="5"><div class="empty-state">No active users<?= $search ? " matching \"$search\"" : '' ?></div></td></tr><?php endif; ?>
+                </tbody>
+            </table>
         </div>
 
     <?php elseif ($page === 'tools'): ?>
