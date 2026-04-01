@@ -86,6 +86,7 @@ if (!isset($_SESSION['dash_auth'])) {
         ?>
         <!DOCTYPE html>
         <html><head><title>Proxy Server - Login</title>
+        <link rel="icon" type="image/png" href="https://hotspots.co.ke/logo.png">
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
         *{margin:0;padding:0;box-sizing:border-box;}
@@ -264,6 +265,7 @@ function timeAgo($ts) { $a=time()-strtotime($ts); if($a<60) return $a.'s ago'; i
 <html>
 <head>
     <title>Proxy Cache Server</title>
+    <link rel="icon" type="image/png" href="https://hotspots.co.ke/logo.png">
     <meta http-equiv="refresh" content="15">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
