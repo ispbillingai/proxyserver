@@ -36,15 +36,28 @@ $db->exec("CREATE TABLE IF NOT EXISTS mikrotik_active_users (
     KEY idx_last_seen (last_seen)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-// Parse and upsert users
+// Parse and upsert users with deadlock retry
 $users = $usersCsv !== '' ? array_filter(array_map('trim', explode(',', $usersCsv))) : [];
 
-$upsert = $db->prepare("INSERT INTO mikrotik_active_users (tenant, router_id, username, type, last_seen)
-    VALUES (?, ?, ?, ?, NOW())
-    ON DUPLICATE KEY UPDATE last_seen = NOW()");
-
-foreach ($users as $u) {
-    $upsert->execute([$tenant, $routerId, $u, $type]);
+for ($attempt = 0; $attempt < 3; $attempt++) {
+    try {
+        $db->beginTransaction();
+        $upsert = $db->prepare("INSERT INTO mikrotik_active_users (tenant, router_id, username, type, last_seen)
+            VALUES (?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE last_seen = NOW()");
+        foreach ($users as $u) {
+            $upsert->execute([$tenant, $routerId, $u, $type]);
+        }
+        $db->commit();
+        break;
+    } catch (PDOException $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        if ($e->getCode() == 40001 && $attempt < 2) {
+            usleep(50000 * ($attempt + 1)); // 50ms, 100ms backoff
+            continue;
+        }
+        throw $e;
+    }
 }
 
 // Update router heartbeat timestamp
