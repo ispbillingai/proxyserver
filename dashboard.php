@@ -231,6 +231,27 @@ try {
     $totalMikrotikUsers = $db->query("SELECT COUNT(*) c FROM mikrotik_active_users")->fetch()['c'];
 } catch (Throwable $e) {}
 
+// Proxy user queue (receive_full / fetch_full)
+$queueRows = [];
+$queueCounts = ['pending' => 0, 'delivered' => 0, 'failed' => 0, 'total' => 0];
+try {
+    $db->query("SELECT 1 FROM proxy_user_queue LIMIT 1");
+    $queueWhere = '';
+    $queueParams = [];
+    if ($search !== '') {
+        $queueWhere = "WHERE tenant LIKE :q OR username LIKE :q2 OR profile_name LIKE :q3";
+        $queueParams = [':q' => "%$search%", ':q2' => "%$search%", ':q3' => "%$search%"];
+    }
+    $qs = $db->prepare("SELECT * FROM proxy_user_queue $queueWhere ORDER BY created_at DESC LIMIT 200");
+    $qs->execute($queueParams);
+    $queueRows = $qs->fetchAll();
+    $qc = $db->query("SELECT status, COUNT(*) c FROM proxy_user_queue GROUP BY status")->fetchAll();
+    foreach ($qc as $row) {
+        $queueCounts[$row['status']] = (int)$row['c'];
+        $queueCounts['total'] += (int)$row['c'];
+    }
+} catch (Throwable $e) {}
+
 // MySQL status
 $mysqlStatus = [];
 try {
@@ -391,6 +412,9 @@ function timeAgo($ts) { $a=time()-strtotime($ts); if($a<60) return $a.'s ago'; i
             <div class="lbl">MikroTik</div>
             <a href="?action=dashboard&page=mikrotik" class="<?= $page === 'mikrotik' ? 'active' : '' ?>">
                 <span class="icon">&#9016;</span> Active Users <span class="count"><?= number_format($totalMikrotikUsers) ?></span>
+            </a>
+            <a href="?action=dashboard&page=queue" class="<?= $page === 'queue' ? 'active' : '' ?>">
+                <span class="icon">&#9193;</span> User Queue <span class="count"><?= number_format($queueCounts['pending']) ?></span>
             </a>
             <div class="lbl">System</div>
             <a href="?action=dashboard&page=health" class="<?= $page === 'health' ? 'active' : '' ?>">
@@ -615,6 +639,50 @@ function timeAgo($ts) { $a=time()-strtotime($ts); if($a<60) return $a.'s ago'; i
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($mikrotikUsers)): ?><tr><td colspan="5"><div class="empty-state">No active users<?= $search ? " matching \"$search\"" : '' ?></div></td></tr><?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+
+    <?php elseif ($page === 'queue'): ?>
+        <div class="page-header">
+            <div><h2>User Queue</h2><p>Pending activations via receive_full.php (auto-deleted after 5 min)</p></div>
+            <form method="GET" class="search-bar"><input type="hidden" name="action" value="dashboard"><input type="hidden" name="page" value="queue"><input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search tenant, username, profile..."><button type="submit">Search</button></form>
+        </div>
+        <div class="cards">
+            <div class="card card-accent"><div class="card-label">Total</div><div class="card-value"><?= number_format($queueCounts['total']) ?></div><div class="card-sub">In queue table</div></div>
+            <div class="card card-amber"><div class="card-label">Pending</div><div class="card-value"><?= number_format($queueCounts['pending']) ?></div><div class="card-sub">Awaiting router pull</div></div>
+            <div class="card card-green"><div class="card-label">Delivered</div><div class="card-value"><?= number_format($queueCounts['delivered']) ?></div><div class="card-sub">Pulled by router</div></div>
+            <div class="card card-red"><div class="card-label">Failed</div><div class="card-value"><?= number_format($queueCounts['failed']) ?></div><div class="card-sub">Errors</div></div>
+        </div>
+        <div class="table-wrap">
+            <div class="table-header"><h3>Queue Entries</h3><span><?= count($queueRows) ?> shown (max 200)</span></div>
+            <table>
+                <thead><tr><th>Tenant</th><th>Router</th><th>Type</th><th>Username</th><th>Profile</th><th>Plan</th><th>Expiration</th><th>Status</th><th>Created</th><th>Delivered</th></tr></thead>
+                <tbody>
+                <?php foreach ($queueRows as $q):
+                    $scls = $q['status'] === 'pending' ? 'amber' : ($q['status'] === 'delivered' ? 'green' : 'red');
+                    $plan = $q['typebp'];
+                    if ($q['typebp'] === 'Limited') {
+                        $bits = [];
+                        if ($q['time_limit'] > 0) $bits[] = $q['time_limit'] . ' ' . $q['time_unit'];
+                        if ($q['data_limit'] > 0) $bits[] = $q['data_limit'] . ' ' . $q['data_unit'];
+                        if ($bits) $plan .= ' (' . implode(', ', $bits) . ')';
+                    }
+                ?>
+                <tr>
+                    <td><span class="badge badge-blue"><?= htmlspecialchars($q['tenant']) ?></span></td>
+                    <td>#<?= $q['router_id'] ?></td>
+                    <td><span class="badge badge-<?= $q['type'] === 'PPPOE' ? 'amber' : 'green' ?>"><?= $q['type'] ?></span></td>
+                    <td><strong class="truncate"><?= htmlspecialchars($q['username']) ?></strong></td>
+                    <td><?= htmlspecialchars($q['profile_name']) ?></td>
+                    <td><?= htmlspecialchars($plan) ?></td>
+                    <td style="color:#64748b;"><?= htmlspecialchars($q['expiration']) ?></td>
+                    <td><span class="dot dot-<?= $scls ?>"></span><span class="badge badge-<?= $scls ?>"><?= $q['status'] ?></span></td>
+                    <td><?= timeAgo($q['created_at']) ?></td>
+                    <td><?= $q['delivered_at'] ? timeAgo($q['delivered_at']) : '—' ?></td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if (empty($queueRows)): ?><tr><td colspan="10"><div class="empty-state">Queue is empty<?= $search ? " for \"$search\"" : '' ?></div></td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
