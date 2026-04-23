@@ -138,7 +138,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['run_cleanup'])) {
         try { $db = getDB(); $cutoff = date('Y-m-d H:i:s', time() - CLEANUP_MAX_AGE); $stmt = $db->prepare("DELETE FROM cached_users WHERE pushed_at < :cutoff"); $stmt->execute([':cutoff' => $cutoff]); $message = 'Removed ' . $stmt->rowCount() . ' expired records.'; $messageType = 'success'; } catch (Throwable $e) { $message = 'Error: ' . $e->getMessage(); $messageType = 'error'; }
     }
+    if (isset($_POST['disable_receivers'])) {
+        try { $until = disableReceiversFor(3600); $message = "Receivers disabled until $until (auto re-enables in 1 hour)."; $messageType = 'success'; } catch (Throwable $e) { $message = 'Error: ' . $e->getMessage(); $messageType = 'error'; }
+    }
+    if (isset($_POST['enable_receivers'])) {
+        try { enableReceivers(); $message = 'Receivers re-enabled.'; $messageType = 'success'; } catch (Throwable $e) { $message = 'Error: ' . $e->getMessage(); $messageType = 'error'; }
+    }
 }
+
+$receiversDisabledUntil = receiversDisabledUntil();
 
 $db = getDB();
 $page = isset($_GET['page']) ? $_GET['page'] : 'overview';
@@ -690,6 +698,19 @@ function timeAgo($ts) { $a=time()-strtotime($ts); if($a<60) return $a.'s ago'; i
     <?php elseif ($page === 'tools'): ?>
         <div class="page-header"><div><h2>Tools</h2><p>Maintenance</p></div></div>
         <div class="tool-grid">
+            <?php if ($receiversDisabledUntil): $remaining = strtotime($receiversDisabledUntil) - time(); $mins = (int)ceil($remaining / 60); ?>
+            <div class="tool-card" style="border:1px solid #f59e0b;">
+                <h3>Receivers: <span style="color:#f59e0b;">DISABLED</span></h3>
+                <p>Incoming callbacks are being rejected (503). Auto re-enables in <strong><?= $mins ?> min</strong> (at <?= htmlspecialchars($receiversDisabledUntil) ?>).</p>
+                <form method="POST"><button type="submit" name="enable_receivers" value="1" class="btn btn-green">Re-enable Now</button></form>
+            </div>
+            <?php else: ?>
+            <div class="tool-card">
+                <h3>Receivers: <span style="color:#22c55e;">ENABLED</span></h3>
+                <p>receive.php &amp; receive_full.php are accepting callbacks. Disable for 1 hour if there's a temporary issue (auto re-enables).</p>
+                <form method="POST" onsubmit="return confirm('Reject all incoming callbacks for 1 hour?')"><button type="submit" name="disable_receivers" value="1" class="btn btn-red">Disable 1 Hour</button></form>
+            </div>
+            <?php endif; ?>
             <div class="tool-card"><h3>Initialize Database</h3><p>Create/verify all tables.</p><form method="POST"><button type="submit" name="init_db" value="1" class="btn btn-indigo">Verify Tables</button></form></div>
             <div class="tool-card"><h3>Run Cleanup</h3><p>Delete records older than <?= CLEANUP_MAX_AGE/60 ?>min.</p><form method="POST"><button type="submit" name="run_cleanup" value="1" class="btn btn-green">Run Now</button></form></div>
             <div class="tool-card"><h3>Purge All</h3><p>Delete all cached records.</p><form method="POST" onsubmit="return confirm('Delete all?')"><button type="submit" name="purge_all" value="1" class="btn btn-red">Purge</button></form></div>

@@ -36,3 +36,47 @@ function getDB() {
 
     return $pdo;
 }
+
+// --- Receiver toggle (receive.php / receive_full.php) ---
+// Stored as a row in system_settings with key='receivers_disabled_until'.
+// Value is a DATETIME string; if > NOW(), receivers reject incoming POSTs.
+
+function ensureSettingsTable() {
+    $db = getDB();
+    $db->exec("CREATE TABLE IF NOT EXISTS system_settings (
+        `key` VARCHAR(64) NOT NULL PRIMARY KEY,
+        `value` TEXT NULL,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+function receiversDisabledUntil() {
+    try {
+        ensureSettingsTable();
+        $db = getDB();
+        $stmt = $db->prepare("SELECT `value` FROM system_settings WHERE `key` = 'receivers_disabled_until'");
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if (!$row || empty($row['value'])) return null;
+        if (strtotime($row['value']) <= time()) return null;
+        return $row['value'];
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+function disableReceiversFor($seconds) {
+    ensureSettingsTable();
+    $until = date('Y-m-d H:i:s', time() + (int)$seconds);
+    $db = getDB();
+    $stmt = $db->prepare("INSERT INTO system_settings (`key`, `value`) VALUES ('receivers_disabled_until', :v)
+        ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)");
+    $stmt->execute([':v' => $until]);
+    return $until;
+}
+
+function enableReceivers() {
+    ensureSettingsTable();
+    $db = getDB();
+    $db->exec("DELETE FROM system_settings WHERE `key` = 'receivers_disabled_until'");
+}

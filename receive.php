@@ -13,6 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+$disabledUntil = receiversDisabledUntil();
+if ($disabledUntil !== null) {
+    http_response_code(503);
+    header('Retry-After: ' . max(1, strtotime($disabledUntil) - time()));
+    echo json_encode(['status' => 'disabled', 'message' => 'Receivers temporarily disabled', 'until' => $disabledUntil]);
+    exit;
+}
+
 $raw = file_get_contents('php://input');
 $data = json_decode($raw, true);
 
