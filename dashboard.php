@@ -192,10 +192,28 @@ $tenantStats = $tenantStmt->fetchAll();
 
 $routerWhere = $search !== '' ? "WHERE tenant LIKE :q OR CAST(router_id AS CHAR) LIKE :q2" : '';
 $routerParams = $search !== '' ? [':q' => "%$search%", ':q2' => "%$search%"] : [];
+
+// Pagination for the Routers page (other pages use the unpaginated list)
+$routerPerPage = 50;
+$routerPage    = max(1, (int)($_GET['p'] ?? 1));
+$routerOffset  = ($routerPage - 1) * $routerPerPage;
+
+// Total distinct routers (for page count + header)
+$countStmt = $db->prepare("SELECT COUNT(*) c FROM (
+    SELECT 1 FROM cached_users $routerWhere GROUP BY tenant, router_id
+) t");
+$countStmt->execute($routerParams);
+$routerTotal = (int)$countStmt->fetch()['c'];
+$routerPages = max(1, (int)ceil($routerTotal / $routerPerPage));
+
 $routerStmt = $db->prepare("SELECT tenant, router_id, COUNT(*) as user_count,
     MAX(pushed_at) as last_push
-    FROM cached_users $routerWhere GROUP BY tenant, router_id ORDER BY $orderCol $dir LIMIT 200");
-$routerStmt->execute($routerParams);
+    FROM cached_users $routerWhere GROUP BY tenant, router_id ORDER BY $orderCol $dir
+    LIMIT :lim OFFSET :off");
+foreach ($routerParams as $k => $v) $routerStmt->bindValue($k, $v);
+$routerStmt->bindValue(':lim', $routerPerPage, PDO::PARAM_INT);
+$routerStmt->bindValue(':off', $routerOffset, PDO::PARAM_INT);
+$routerStmt->execute();
 $routerStats = $routerStmt->fetchAll();
 
 $userWhere = $search !== '' ? "WHERE tenant LIKE :q OR username LIKE :q2 OR profile_name LIKE :q3" : '';
@@ -497,8 +515,14 @@ function timeAgo($ts) { $a=time()-strtotime($ts); if($a<60) return $a.'s ago'; i
         </div>
 
     <?php elseif ($page === 'routers'): ?>
+        <?php
+            $routerQs = "action=dashboard&page=routers&sort=$sort&dir=" . strtolower($dir);
+            if ($search !== '') $routerQs .= '&q=' . urlencode($search);
+            $rangeStart = $routerTotal === 0 ? 0 : $routerOffset + 1;
+            $rangeEnd   = min($routerOffset + $routerPerPage, $routerTotal);
+        ?>
         <div class="page-header">
-            <div><h2>Routers</h2><p><?= count($routerStats) ?> router(s)</p></div>
+            <div><h2>Routers</h2><p><?= number_format($routerTotal) ?> router(s) &middot; showing <?= $rangeStart ?>–<?= $rangeEnd ?></p></div>
             <form method="GET" class="search-bar"><input type="hidden" name="action" value="dashboard"><input type="hidden" name="page" value="routers"><input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search tenant or router ID..."><button type="submit">Search</button></form>
         </div>
         <div class="table-wrap">
@@ -512,6 +536,31 @@ function timeAgo($ts) { $a=time()-strtotime($ts); if($a<60) return $a.'s ago'; i
                 </tbody>
             </table>
         </div>
+        <?php if ($routerPages > 1): ?>
+        <div class="pagination" style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:16px;font-size:13px;">
+            <?php if ($routerPage > 1): ?>
+                <a href="?<?= $routerQs ?>&p=1" class="page-btn">&laquo; First</a>
+                <a href="?<?= $routerQs ?>&p=<?= $routerPage - 1 ?>" class="page-btn">&lsaquo; Prev</a>
+            <?php endif; ?>
+            <?php
+                $winStart = max(1, $routerPage - 3);
+                $winEnd   = min($routerPages, $routerPage + 3);
+                for ($i = $winStart; $i <= $winEnd; $i++):
+            ?>
+                <a href="?<?= $routerQs ?>&p=<?= $i ?>" class="page-btn <?= $i === $routerPage ? 'active' : '' ?>"><?= $i ?></a>
+            <?php endfor; ?>
+            <?php if ($routerPage < $routerPages): ?>
+                <a href="?<?= $routerQs ?>&p=<?= $routerPage + 1 ?>" class="page-btn">Next &rsaquo;</a>
+                <a href="?<?= $routerQs ?>&p=<?= $routerPages ?>" class="page-btn">Last &raquo;</a>
+            <?php endif; ?>
+            <span style="margin-left:12px;color:#64748b;">Page <?= $routerPage ?> of <?= $routerPages ?></span>
+        </div>
+        <style>
+            .page-btn { padding:6px 11px; border:1px solid #334155; border-radius:6px; color:#cbd5e1; text-decoration:none; background:#1e293b; }
+            .page-btn:hover { background:#334155; color:#fff; }
+            .page-btn.active { background:#6366f1; border-color:#6366f1; color:#fff; }
+        </style>
+        <?php endif; ?>
 
     <?php elseif ($page === 'users'): ?>
         <div class="page-header">
