@@ -37,11 +37,26 @@ $metrics['load_avg_1'] = $load ? round($load[0], 2) : 0;
 $metrics['load_avg_5'] = $load ? round($load[1], 2) : 0;
 $metrics['load_avg_15'] = $load ? round($load[2], 2) : 0;
 
-// CPU percent (from /proc/stat snapshot)
+// CPU percent — two /proc/stat samples 500ms apart, count all non-idle time
+function readCpuStat() {
+    $data = @file_get_contents('/proc/stat');
+    if (!$data) return null;
+    if (!preg_match('/^cpu\s+(.*)$/m', $data, $m)) return null;
+    $parts = preg_split('/\s+/', trim($m[1]));
+    // user, nice, system, idle, iowait, irq, softirq, steal, guest, guest_nice
+    $idle    = (int)($parts[3] ?? 0) + (int)($parts[4] ?? 0); // idle + iowait
+    $nonIdle = (int)($parts[0] ?? 0) + (int)($parts[1] ?? 0) + (int)($parts[2] ?? 0)
+             + (int)($parts[5] ?? 0) + (int)($parts[6] ?? 0) + (int)($parts[7] ?? 0);
+    return ['idle' => $idle, 'total' => $idle + $nonIdle];
+}
 $cpuPercent = 0;
-$cpuLine = @shell_exec("top -bn1 | grep 'Cpu(s)' | awk '{print $2}'");
-if ($cpuLine !== null) {
-    $cpuPercent = round((float)trim($cpuLine), 1);
+$s1 = readCpuStat();
+usleep(500000);
+$s2 = readCpuStat();
+if ($s1 && $s2) {
+    $totalD = $s2['total'] - $s1['total'];
+    $idleD  = $s2['idle']  - $s1['idle'];
+    if ($totalD > 0) $cpuPercent = round((1 - $idleD / $totalD) * 100, 1);
 }
 $metrics['cpu_percent'] = $cpuPercent;
 
