@@ -19,7 +19,7 @@ $db->exec("CREATE TABLE IF NOT EXISTS server_metrics (
     disk_total_gb FLOAT DEFAULT 0,
     disk_percent FLOAT DEFAULT 0,
     mysql_connections INT DEFAULT 0,
-    mysql_queries INT DEFAULT 0,
+    mysql_queries BIGINT UNSIGNED DEFAULT 0,
     apache_workers INT DEFAULT 0,
     load_avg_1 FLOAT DEFAULT 0,
     load_avg_5 FLOAT DEFAULT 0,
@@ -27,6 +27,10 @@ $db->exec("CREATE TABLE IF NOT EXISTS server_metrics (
     cached_users_count INT DEFAULT 0,
     KEY idx_recorded (recorded_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+// Idempotent: widens mysql_queries on already-existing tables (INT overflows
+// after ~2.1B queries — uptimes of weeks easily exceed that)
+try { $db->exec("ALTER TABLE server_metrics MODIFY mysql_queries BIGINT UNSIGNED DEFAULT 0"); } catch (Throwable $e) {}
 
 // Collect metrics
 $metrics = [];

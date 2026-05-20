@@ -36,27 +36,29 @@ $db->exec("CREATE TABLE IF NOT EXISTS mikrotik_active_users (
     KEY idx_last_seen (last_seen)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-// Parse and upsert users with deadlock retry
+// Parse and upsert users (no outer transaction — each row is independent,
+// transactions only created cross-router deadlocks under concurrent load).
 $users = $usersCsv !== '' ? array_filter(array_map('trim', explode(',', $usersCsv))) : [];
+sort($users); // consistent lock order across concurrent requests
 
-for ($attempt = 0; $attempt < 3; $attempt++) {
-    try {
-        $db->beginTransaction();
-        $upsert = $db->prepare("INSERT INTO mikrotik_active_users (tenant, router_id, username, type, last_seen)
-            VALUES (?, ?, ?, ?, NOW())
-            ON DUPLICATE KEY UPDATE last_seen = NOW()");
-        foreach ($users as $u) {
+$upsert = $db->prepare("INSERT INTO mikrotik_active_users (tenant, router_id, username, type, last_seen)
+    VALUES (?, ?, ?, ?, NOW())
+    ON DUPLICATE KEY UPDATE last_seen = NOW()");
+
+foreach ($users as $u) {
+    for ($attempt = 0; $attempt < 3; $attempt++) {
+        try {
             $upsert->execute([$tenant, $routerId, $u, $type]);
+            break;
+        } catch (PDOException $e) {
+            if ($e->getCode() == 40001 && $attempt < 2) {
+                usleep(20000 * ($attempt + 1)); // 20ms, 40ms
+                continue;
+            }
+            // Don't fatal the whole request for one row; log and move on
+            error_log("mikrotik_data upsert failed for $u@$tenant/$routerId: " . $e->getMessage());
+            break;
         }
-        $db->commit();
-        break;
-    } catch (PDOException $e) {
-        if ($db->inTransaction()) $db->rollBack();
-        if ($e->getCode() == 40001 && $attempt < 2) {
-            usleep(50000 * ($attempt + 1)); // 50ms, 100ms backoff
-            continue;
-        }
-        throw $e;
     }
 }
 
